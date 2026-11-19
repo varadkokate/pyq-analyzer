@@ -1,0 +1,8 @@
+{
+  "name": "PYQ Analyzer",
+  "description": "Analyze previous years' exam question papers across PDF, images, DOCX, and TXT to identify recurring concepts, topic weightage, model answers, and a predicted mock paper.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
