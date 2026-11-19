@@ -1,4 +1,4 @@
-import { Moon, Printer, Sparkles, Sun } from 'lucide-react';
+import { KeyRound, Moon, Printer, Sparkles, Sun } from 'lucide-react';
 
 export type ActiveView = 'upload' | 'questions' | 'weightage' | 'mock';
 
@@ -7,7 +7,9 @@ interface TopBarProps {
   hasAnalysis: boolean;
   isAnalyzing: boolean;
   theme: 'light' | 'dark';
+  hasCustomApiKey: boolean;
   onToggleTheme: () => void;
+  onOpenApiKeyModal: () => void;
   onSelectView: (view: ActiveView) => void;
   onExportPrint: () => void;
   onLoadSamples: () => void;
@@ -25,7 +27,9 @@ export function TopBar({
   hasAnalysis,
   isAnalyzing,
   theme,
+  hasCustomApiKey,
   onToggleTheme,
+  onOpenApiKeyModal,
   onSelectView,
   onExportPrint,
   onLoadSamples,
@@ -77,8 +81,30 @@ export function TopBar({
           })}
         </nav>
 
-        {/* Zone 3: Theme Toggle + Single Primary Action */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Zone 3: Utility Icons + Single Primary Action */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onOpenApiKeyModal}
+            aria-label={
+              hasCustomApiKey
+                ? 'API Key Settings (Custom fallback key active)'
+                : 'API Key Settings'
+            }
+            title={
+              hasCustomApiKey
+                ? 'API Key Settings — Custom fallback key active'
+                : 'API Key Settings (Optional BYOK fallback)'
+            }
+            className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
+              hasCustomApiKey
+                ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950'
+                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
+            }`}
+          >
+            <KeyRound className="w-4 h-4" aria-hidden="true" />
+          </button>
+
           <button
             type="button"
             onClick={onToggleTheme}

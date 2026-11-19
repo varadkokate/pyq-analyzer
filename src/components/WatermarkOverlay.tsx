@@ -29,22 +29,12 @@ function WatermarkTileGrid({ isPrint = false }: { isPrint?: boolean }) {
 
 export function WatermarkOverlay() {
   return (
-    <>
-      {/* Transparent screen watermark across the website */}
-      <div
-        aria-hidden="true"
-        className="no-print pointer-events-none select-none fixed inset-0 z-20 overflow-hidden flex items-center justify-center"
-      >
-        <WatermarkTileGrid />
-      </div>
-
-      {/* Transparent print/PDF watermark repeating on every exported page */}
-      <div
-        aria-hidden="true"
-        className="print-only print-watermark-layer pointer-events-none select-none items-center justify-center"
-      >
-        <WatermarkTileGrid isPrint />
-      </div>
-    </>
+    /* Transparent print/PDF watermark repeating on every exported page */
+    <div
+      aria-hidden="true"
+      className="print-only print-watermark-layer pointer-events-none select-none items-center justify-center"
+    >
+      <WatermarkTileGrid isPrint />
+    </div>
   );
 }

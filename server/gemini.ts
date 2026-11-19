@@ -2,13 +2,16 @@ import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import mammoth from 'mammoth';
 import type { AnalysisResult, ModelAnswer } from '../src/types.ts';
 
-const MODEL_NAME = 'gemini-4-hydrogen';
+const MODEL_NAME = 'gemini-3.1-flash-lite';
+const MAX_RETRIES = 2; // Up to 2 automatic retries (3 total attempts)
 
-function getAiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+function getAiClient(customApiKey?: string): GoogleGenAI {
+  const trimmedCustom = customApiKey?.trim();
+  const apiKey = trimmedCustom || process.env.GEMINI_API_KEY;
+
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
     const err = new Error(
-      'Gemini API key is not configured. Please verify your key in the Settings > Secrets panel.'
+      'Gemini API key is not configured. Add a fallback key in API Key Settings or check Settings > Secrets.'
     );
     (err as Error & { statusCode?: number }).statusCode = 403;
     throw err;
@@ -31,6 +34,13 @@ export interface UploadedPaperFile {
   size: number;
 }
 
+export interface ExtractedPaperText {
+  filename: string;
+  format: string;
+  text: string;
+  pageCount?: number;
+}
+
 interface ContentPart {
   text?: string;
   inlineData?: {
@@ -44,13 +54,21 @@ function getExtension(filename: string): string {
   return parts.length > 1 ? `.${parts[parts.length - 1]}` : '';
 }
 
+function compactExtractedText(raw: string): string {
+  return raw
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function convertFileToParts(file: UploadedPaperFile, index: number): Promise<ContentPart[]> {
   const ext = getExtension(file.originalname);
-  const label = `--- FILE ${index + 1}: "${file.originalname}" ---`;
+  const label = `--- PAPER ${index + 1}: "${file.originalname}" ---`;
 
   if (file.mimetype === 'application/pdf' || ext === '.pdf') {
     return [
-      { text: `${label} (PDF Document)` },
+      { text: `${label} (Scanned PDF — read all visible questions, marks, headings, and year metadata)` },
       {
         inlineData: {
           mimeType: 'application/pdf',
@@ -77,7 +95,7 @@ async function convertFileToParts(file: UploadedPaperFile, index: number): Promi
       else mimeType = 'image/jpeg';
     }
     return [
-      { text: `${label} (Scanned Exam Paper Image — read all visible questions, marks, headings, and year metadata carefully)` },
+      { text: `${label} (Scanned Image — OCR all questions, marks, headings, and year metadata)` },
       {
         inlineData: {
           mimeType,
@@ -92,87 +110,146 @@ async function convertFileToParts(file: UploadedPaperFile, index: number): Promi
     ext === '.docx'
   ) {
     const extracted = await mammoth.extractRawText({ buffer: file.buffer });
-    const rawText = extracted.value.trim();
+    const rawText = compactExtractedText(extracted.value);
     if (!rawText) {
-      return [
-        {
-          text: `${label} (DOCX file appeared to contain no extractable text)`,
-        },
-      ];
+      return [{ text: `${label} (DOCX contained no extractable text)` }];
     }
-    return [{ text: `${label} (DOCX Content)\n${rawText}` }];
+    return [{ text: `${label} (DOCX Text)\n${rawText}` }];
   }
 
   if (file.mimetype === 'text/plain' || ext === '.txt' || ext === '.md') {
-    const rawText = file.buffer.toString('utf-8').trim();
-    return [{ text: `${label} (Text Content)\n${rawText}` }];
+    const rawText = compactExtractedText(file.buffer.toString('utf-8'));
+    return [{ text: `${label} (Plain Text)\n${rawText}` }];
   }
 
   const unsupportedError = new Error(
-    `Unsupported file format for "${file.originalname}". Please upload PDF, JPG, PNG, DOCX, or TXT files.`
+    `Unsupported file format for "${file.originalname}". Upload PDF, JPG, PNG, DOCX, or TXT files.`
   );
   (unsupportedError as Error & { statusCode?: number }).statusCode = 400;
   throw unsupportedError;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+function isRetryableError(error: unknown): boolean {
+  const errObj = error as { status?: number; statusCode?: number; message?: string };
+  const status = errObj?.status ?? errObj?.statusCode;
+  const msg = errObj?.message ?? '';
+
+  if (status === 429 || status === 503 || status === 500 || status === 502 || status === 504) {
+    return true;
+  }
+  if (
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('429') ||
+    msg.includes('503') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('overloaded') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('fetch failed')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = MAX_RETRIES): Promise<T> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error;
-      const status =
-        (error as { status?: number; statusCode?: number })?.status ??
-        (error as { status?: number; statusCode?: number })?.statusCode;
-      // Do not retry client auth/validation errors
-      if (status && status >= 400 && status < 500 && status !== 429) {
+      if (!isRetryableError(error) || attempt === maxRetries) {
         throw error;
       }
-      if (attempt < maxAttempts) {
-        const delayMs = 800 * Math.pow(2, attempt - 1);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+      // Exponential backoff: 1.5s, then 3s (+ small jitter)
+      const baseDelay = 1500 * Math.pow(2, attempt);
+      const jitter = Math.floor(Math.random() * 400);
+      await new Promise((resolve) => setTimeout(resolve, baseDelay + jitter));
     }
   }
   throw lastError;
 }
 
-export function formatGeminiError(error: unknown): { status: number; message: string } {
+export type ApiErrorCode =
+  | 'RATE_LIMITED'
+  | 'SERVICE_UNAVAILABLE'
+  | 'AUTH_ERROR'
+  | 'BAD_REQUEST'
+  | 'INTERNAL_ERROR';
+
+export interface FormattedApiError {
+  status: number;
+  code: ApiErrorCode;
+  message: string;
+  retryAfterSeconds?: number;
+}
+
+export function formatGeminiError(error: unknown, usedCustomKey = false): FormattedApiError {
   const errObj = error as { status?: number; statusCode?: number; message?: string };
   const rawMessage = errObj?.message || 'An unexpected error occurred while contacting Gemini.';
   const status = errObj?.status ?? errObj?.statusCode ?? 500;
 
   if (
-    status === 403 ||
-    rawMessage.includes('PERMISSION_DENIED') ||
-    rawMessage.includes('API_KEY_INVALID') ||
-    rawMessage.includes('API key')
+    status === 429 ||
+    rawMessage.includes('RESOURCE_EXHAUSTED') ||
+    rawMessage.includes('429') ||
+    rawMessage.toLowerCase().includes('quota')
   ) {
+    const matchSeconds = rawMessage.match(/retry in (\d+(?:\.\d+)?)s/i);
+    const retryAfterSeconds = matchSeconds ? Math.min(90, Math.max(15, Math.ceil(Number(matchSeconds[1])))) : 30;
     return {
-      status: 403,
-      message:
-        'Gemini API authentication failed. Please check your API key in the Settings > Secrets panel.',
+      status: 429,
+      code: 'RATE_LIMITED',
+      retryAfterSeconds,
+      message: usedCustomKey
+        ? 'Your custom Gemini API key has reached its rate limit. Wait for the countdown to retry or switch keys.'
+        : 'The shared Gemini API quota is temporarily busy. Wait for the countdown to retry, or add your own Gemini API key in API Key Settings.',
     };
   }
 
-  if (status === 429 || rawMessage.includes('RESOURCE_EXHAUSTED')) {
+  if (
+    status === 503 ||
+    rawMessage.includes('UNAVAILABLE') ||
+    rawMessage.includes('503') ||
+    rawMessage.toLowerCase().includes('overloaded')
+  ) {
     return {
-      status: 429,
+      status: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      retryAfterSeconds: 20,
       message:
-        'Gemini API rate limit or quota reached. Please wait a moment and try again, or check your quota in Settings > Secrets.',
+        'Gemini is experiencing temporary high demand. Please wait a few seconds and try again.',
+    };
+  }
+
+  if (
+    status === 403 ||
+    status === 401 ||
+    rawMessage.includes('PERMISSION_DENIED') ||
+    rawMessage.includes('API_KEY_INVALID') ||
+    rawMessage.toLowerCase().includes('api key')
+  ) {
+    return {
+      status: 403,
+      code: 'AUTH_ERROR',
+      message: usedCustomKey
+        ? 'Your custom Gemini API key appears invalid or lacks permission. Verify it in API Key Settings.'
+        : 'Gemini API authentication failed. Check Settings > Secrets or add a fallback key in API Key Settings.',
     };
   }
 
   if (status === 400) {
     return {
       status: 400,
+      code: 'BAD_REQUEST',
       message: rawMessage,
     };
   }
 
   return {
     status: status >= 400 && status < 600 ? status : 500,
+    code: 'INTERNAL_ERROR',
     message: rawMessage,
   };
 }
@@ -183,34 +260,13 @@ const analysisResponseSchema = {
     summary: {
       type: Type.OBJECT,
       properties: {
-        subjectName: {
-          type: Type.STRING,
-          description: 'Detected or provided subject name.',
-        },
-        examTag: {
-          type: Type.STRING,
-          description: 'Detected or provided exam/university/semester label.',
-        },
-        totalPapersAnalyzed: {
-          type: Type.INTEGER,
-          description: 'Count of exam papers analyzed.',
-        },
-        totalQuestionsExtracted: {
-          type: Type.INTEGER,
-          description: 'Total individual questions found across all uploaded papers before grouping.',
-        },
-        totalUniqueConcepts: {
-          type: Type.INTEGER,
-          description: 'Number of distinct semantically grouped questions returned.',
-        },
-        highPriorityCount: {
-          type: Type.INTEGER,
-          description: 'Count of questions marked High priority.',
-        },
-        keyInsight: {
-          type: Type.STRING,
-          description: 'A sharp 1-2 sentence exam strategy takeaway summarizing the strongest recurring patterns across these papers.',
-        },
+        subjectName: { type: Type.STRING },
+        examTag: { type: Type.STRING },
+        totalPapersAnalyzed: { type: Type.INTEGER },
+        totalQuestionsExtracted: { type: Type.INTEGER },
+        totalUniqueConcepts: { type: Type.INTEGER },
+        highPriorityCount: { type: Type.INTEGER },
+        keyInsight: { type: Type.STRING },
       },
       required: [
         'subjectName',
@@ -224,56 +280,20 @@ const analysisResponseSchema = {
     },
     importantQuestions: {
       type: Type.ARRAY,
-      description: 'Ranked list of unique questions grouped by semantic meaning, ordered from highest to lowest exam importance.',
       items: {
         type: Type.OBJECT,
         properties: {
-          id: {
-            type: Type.STRING,
-            description: 'Unique short slug id such as q-1, q-2.',
-          },
-          rank: {
-            type: Type.INTEGER,
-            description: '1-based importance rank.',
-          },
-          questionText: {
-            type: Type.STRING,
-            description: 'Clear canonical phrasing of the question representing this recurring concept.',
-          },
-          topic: {
-            type: Type.STRING,
-            description: 'Concise chapter, unit, or topic name (consistent across topicWeightage).',
-          },
-          frequencyCount: {
-            type: Type.INTEGER,
-            description: 'How many times this concept appeared across the uploaded papers.',
-          },
-          appearedIn: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: 'Exact years or paper names where this question appeared (e.g., "May 2023", "Dec 2022", or filename if year is absent).',
-          },
-          estimatedMarks: {
-            type: Type.INTEGER,
-            description: 'Typical integer marks value (e.g., 2, 5, 8, 10).',
-          },
-          marksLabel: {
-            type: Type.STRING,
-            description: 'Formatted marks label such as "10 Marks" or "5–8 Marks".',
-          },
-          priority: {
-            type: Type.STRING,
-            description: 'Must be exactly one of: High, Medium, Low.',
-          },
-          variantExamples: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: 'Up to 3 short examples of alternate wordings found in the source papers if grouped from multiple appearances.',
-          },
-          studyTip: {
-            type: Type.STRING,
-            description: 'One concise sentence explaining what the examiner tests and how to score full marks on this question.',
-          },
+          id: { type: Type.STRING },
+          rank: { type: Type.INTEGER },
+          questionText: { type: Type.STRING },
+          topic: { type: Type.STRING },
+          frequencyCount: { type: Type.INTEGER },
+          appearedIn: { type: Type.ARRAY, items: { type: Type.STRING } },
+          estimatedMarks: { type: Type.INTEGER },
+          marksLabel: { type: Type.STRING },
+          priority: { type: Type.STRING },
+          variantExamples: { type: Type.ARRAY, items: { type: Type.STRING } },
+          studyTip: { type: Type.STRING },
         },
         required: [
           'id',
@@ -292,15 +312,11 @@ const analysisResponseSchema = {
     },
     topicWeightage: {
       type: Type.ARRAY,
-      description: 'Breakdown of chapters/topics by percentage of total questions. Percentages should sum to 100.',
       items: {
         type: Type.OBJECT,
         properties: {
           topic: { type: Type.STRING },
-          percentage: {
-            type: Type.NUMBER,
-            description: 'Percentage of total questions (0 to 100, rounded to 1 decimal or whole number).',
-          },
+          percentage: { type: Type.NUMBER },
           questionCount: { type: Type.INTEGER },
           totalMarks: { type: Type.INTEGER },
           highPriorityCount: { type: Type.INTEGER },
@@ -310,16 +326,12 @@ const analysisResponseSchema = {
     },
     predictedMockPaper: {
       type: Type.OBJECT,
-      description: 'A realistic 1-paper practice exam built from the highest-priority topics and patterns observed.',
       properties: {
         title: { type: Type.STRING },
         subtitle: { type: Type.STRING },
         durationMinutes: { type: Type.INTEGER },
         totalMarks: { type: Type.INTEGER },
-        generalInstructions: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-        },
+        generalInstructions: { type: Type.ARRAY, items: { type: Type.STRING } },
         sections: {
           type: Type.ARRAY,
           items: {
@@ -356,46 +368,59 @@ const analysisResponseSchema = {
 
 export async function analyzePapersWithGemini(params: {
   files: UploadedPaperFile[];
+  extractedTexts: ExtractedPaperText[];
   subjectName?: string;
   examTag?: string;
+  customApiKey?: string;
 }): Promise<AnalysisResult> {
-  const ai = getAiClient();
-  const { files, subjectName, examTag } = params;
+  const ai = getAiClient(params.customApiKey);
+  const { files, extractedTexts, subjectName, examTag } = params;
 
-  const filePartsNested = await Promise.all(files.map((file, idx) => convertFileToParts(file, idx)));
-  const fileParts: ContentPart[] = filePartsNested.flat();
+  const textParts: ContentPart[] = extractedTexts.map((item, idx) => {
+    const cleanText = compactExtractedText(item.text);
+    const pageMeta = item.pageCount ? `, ${item.pageCount} pages` : '';
+    return {
+      text: `--- PAPER ${idx + 1}: "${item.filename}" (${item.format.toUpperCase()} extracted text${pageMeta}) ---\n${cleanText}`,
+    };
+  });
 
-  const fileManifest = files.map((f, idx) => `${idx + 1}. ${f.originalname}`).join('\n');
+  const binaryPartsNested = await Promise.all(
+    files.map((file, idx) => convertFileToParts(file, extractedTexts.length + idx))
+  );
+  const binaryParts: ContentPart[] = binaryPartsNested.flat();
+
+  const allFilenames = [
+    ...extractedTexts.map((t) => t.filename),
+    ...files.map((f) => f.originalname),
+  ];
+  const totalPapers = allFilenames.length;
 
   const promptText = [
-    `Analyze all ${files.length} uploaded previous-year exam question paper(s) together.`,
-    subjectName?.trim() ? `User-provided Subject Name: "${subjectName.trim()}"` : 'User-provided Subject Name: Not provided (infer accurately from the papers).',
-    examTag?.trim() ? `User-provided Exam / University Tag: "${examTag.trim()}"` : 'User-provided Exam / University Tag: Not provided (infer accurately from the papers, or use "University Examination" if unclear).',
-    `Uploaded File Manifest:\n${fileManifest}`,
-    '',
-    'Instructions:',
-    '1. Extract every exam question from every uploaded paper (including PDFs, scanned images, DOCX, and TXT).',
-    '2. Semantically group questions that test the same underlying concept, theorem, derivation, algorithm, or problem type—even when phrased differently across years. Combine their frequency counts and list the exact year/paper labels in `appearedIn` (extract year/session from the paper header or filename).',
-    '3. Rank the grouped questions from most important to least important based on frequency across papers, mark weightage, and foundational syllabus importance.',
-    '4. Assign `priority` strictly as "High", "Medium", or "Low". Use a realistic distribution: recurring or high-mark core questions are "High", moderate/occasionally tested concepts are "Medium", and one-off minor/short questions are "Low".',
-    '5. Normalize topic/unit names so `importantQuestions[].topic` matches `topicWeightage[].topic` cleanly. Ensure `topicWeightage` percentages are accurate and sum to 100.',
-    '6. Generate a complete, authentic `predictedMockPaper` modeled on the mark distribution and style of the uploaded papers, prioritizing the highest-weightage topics and most probable recurring concepts. Include 2–3 clear sections (e.g., Section A: Short Answer, Section B: Analytical / Medium, Section C: Long / Applied) with realistic marks totaling the typical exam total.',
-    '7. Keep all wording crisp, scholarly, and directly faithful to the uploaded papers.',
+    `Analyze all ${totalPapers} previous-year exam paper(s) in ONE comprehensive JSON response.`,
+    subjectName?.trim() ? `Subject: "${subjectName.trim()}"` : 'Subject: Infer from papers.',
+    examTag?.trim() ? `Exam/University: "${examTag.trim()}"` : 'Exam/University: Infer from papers.',
+    `Papers: ${allFilenames.join(', ')}`,
+    'Rules:',
+    '1. Extract all questions across every paper and semantically merge questions testing the same concept even if worded differently.',
+    '2. Rank importantQuestions by frequency, marks, and syllabus weight. Priority must be "High", "Medium", or "Low". Include exact years/papers in appearedIn, up to 2 short variantExamples when merged, and a 1-sentence studyTip.',
+    '3. Compute topicWeightage using identical normalized topic names; percentages must sum to 100.',
+    '4. Build 1 realistic predictedMockPaper (2-3 sections) weighted toward the highest-priority topics.',
+    '5. Be concise and accurate.',
   ].join('\n');
 
   const response = await withRetry(() =>
     ai.models.generateContent({
       model: MODEL_NAME,
       contents: {
-        parts: [...fileParts, { text: promptText }],
+        parts: [...textParts, ...binaryParts, { text: promptText }],
       },
       config: {
         systemInstruction:
-          'You are an expert academic exam analyst and senior university professor specializing in Previous Year Question (PYQ) pattern analysis. You carefully read multi-format exam papers (PDFs, scanned photos, Word documents, and text files), perform accurate semantic deduplication across years, calculate exact topic weightage, and build realistic predicted mock exam papers. Always return strictly valid JSON conforming to the provided schema.',
+          'You are an academic exam analyst specializing in Previous Year Question (PYQ) pattern analysis. Semantically deduplicate repeated questions across years, calculate exact topic weightage, and synthesize a realistic predicted mock paper in one concise, strictly valid JSON response.',
         responseMimeType: 'application/json',
         responseSchema: analysisResponseSchema,
         thinkingConfig: {
-          thinkingLevel: ThinkingLevel.MEDIUM,
+          thinkingLevel: ThinkingLevel.LOW,
         },
       },
     })
@@ -408,24 +433,25 @@ export async function analyzePapersWithGemini(params: {
 
   const parsed = JSON.parse(rawJson) as Omit<AnalysisResult, 'id' | 'createdAt' | 'sourceFiles'>;
 
-  // Normalize priority values and sort ranks defensively
-  const normalizedQuestions = (parsed.importantQuestions || [])
-    .map((q, index) => {
-      const normalizedPriority =
-        q.priority === 'High' || q.priority === 'Medium' || q.priority === 'Low'
-          ? q.priority
-          : 'Medium';
-      return {
-        ...q,
-        id: q.id || `q-${index + 1}`,
-        rank: index + 1,
-        priority: normalizedPriority,
-        frequencyCount: Math.max(1, Number(q.frequencyCount) || 1),
-        estimatedMarks: Math.max(1, Number(q.estimatedMarks) || 5),
-        appearedIn: Array.isArray(q.appearedIn) && q.appearedIn.length > 0 ? q.appearedIn : [files[0]?.originalname ?? 'Uploaded Paper'],
-        variantExamples: Array.isArray(q.variantExamples) ? q.variantExamples : [],
-      };
-    });
+  const normalizedQuestions = (parsed.importantQuestions || []).map((q, index) => {
+    const normalizedPriority =
+      q.priority === 'High' || q.priority === 'Medium' || q.priority === 'Low'
+        ? q.priority
+        : 'Medium';
+    return {
+      ...q,
+      id: q.id || `q-${index + 1}`,
+      rank: index + 1,
+      priority: normalizedPriority,
+      frequencyCount: Math.max(1, Number(q.frequencyCount) || 1),
+      estimatedMarks: Math.max(1, Number(q.estimatedMarks) || 5),
+      appearedIn:
+        Array.isArray(q.appearedIn) && q.appearedIn.length > 0
+          ? q.appearedIn
+          : [allFilenames[0] ?? 'Uploaded Paper'],
+      variantExamples: Array.isArray(q.variantExamples) ? q.variantExamples : [],
+    };
+  });
 
   const normalizedWeightage = (parsed.topicWeightage || [])
     .map((item) => ({
@@ -442,11 +468,11 @@ export async function analyzePapersWithGemini(params: {
   return {
     id: `analysis-${Date.now()}`,
     createdAt: new Date().toISOString(),
-    sourceFiles: files.map((f) => f.originalname),
+    sourceFiles: allFilenames,
     summary: {
       subjectName: subjectName?.trim() || parsed.summary?.subjectName || 'Analyzed Subject',
       examTag: examTag?.trim() || parsed.summary?.examTag || 'Previous Years Examination',
-      totalPapersAnalyzed: files.length,
+      totalPapersAnalyzed: totalPapers,
       totalQuestionsExtracted: Math.max(
         normalizedQuestions.length,
         Number(parsed.summary?.totalQuestionsExtracted) || normalizedQuestions.length
@@ -466,19 +492,9 @@ export async function analyzePapersWithGemini(params: {
 const modelAnswerSchema = {
   type: Type.OBJECT,
   properties: {
-    directAnswer: {
-      type: Type.STRING,
-      description: 'Concise, well-structured, exam-ready explanation directly answering the question at the appropriate depth for the marks weightage.',
-    },
-    keyPoints: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: '4 to 6 crisp, high-scoring bullet points an examiner checks off while grading.',
-    },
-    formulaOrDiagramNote: {
-      type: Type.STRING,
-      description: 'Key equation, theorem, algorithm steps, or labeled diagram to sketch in the exam booklet. Empty string if not applicable.',
-    },
+    directAnswer: { type: Type.STRING },
+    keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+    formulaOrDiagramNote: { type: Type.STRING },
     markingSchemeBreakdown: {
       type: Type.ARRAY,
       items: {
@@ -489,12 +505,8 @@ const modelAnswerSchema = {
         },
         required: ['point', 'marks'],
       },
-      description: 'How marks are typically distributed across parts of the answer.',
     },
-    commonMistakeToAvoid: {
-      type: Type.STRING,
-      description: 'One brief, practical warning about a frequent mistake students make on this question.',
-    },
+    commonMistakeToAvoid: { type: Type.STRING },
   },
   required: [
     'directAnswer',
@@ -512,21 +524,19 @@ export async function generateModelAnswerWithGemini(params: {
   subjectName?: string;
   examTag?: string;
   appearedIn?: string[];
+  customApiKey?: string;
 }): Promise<ModelAnswer> {
-  const ai = getAiClient();
+  const ai = getAiClient(params.customApiKey);
 
   const prompt = [
     `Subject: ${params.subjectName || 'University Course'}`,
-    `Exam Context: ${params.examTag || 'University Examination'}`,
-    `Topic / Unit: ${params.topic}`,
-    `Estimated Weightage: ${params.estimatedMarks} Marks`,
+    `Exam: ${params.examTag || 'University Examination'}`,
+    `Topic: ${params.topic} | Weightage: ${params.estimatedMarks} Marks`,
     params.appearedIn && params.appearedIn.length > 0
-      ? `Previously Appeared In: ${params.appearedIn.join(', ')}`
+      ? `Appeared in: ${params.appearedIn.join(', ')}`
       : '',
-    '',
     `Question: ${params.questionText}`,
-    '',
-    'Write a concise, exam-ready model answer that a student can study and reproduce under timed exam conditions to earn full marks. Calibrate length and detail appropriately to the estimated marks.',
+    'Provide a concise, high-scoring, exam-ready model answer calibrated to the marks.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -537,11 +547,11 @@ export async function generateModelAnswerWithGemini(params: {
       contents: prompt,
       config: {
         systemInstruction:
-          'You are an experienced university examiner writing concise, high-scoring model answer keys. Prioritize clarity, precise technical terminology, structured points, and realistic mark allocation. Avoid fluff.',
+          'You are an experienced university examiner writing concise, high-scoring model answer keys. Prioritize clarity, precise terminology, structured scoring points, and realistic mark allocation.',
         responseMimeType: 'application/json',
         responseSchema: modelAnswerSchema,
         thinkingConfig: {
-          thinkingLevel: ThinkingLevel.LOW,
+          thinkingLevel: ThinkingLevel.MINIMAL,
         },
       },
     })

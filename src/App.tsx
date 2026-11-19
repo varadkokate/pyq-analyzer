@@ -1,20 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Printer } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Database, Plus, Printer, RefreshCw } from 'lucide-react';
 import { TopBar } from './components/TopBar';
 import type { ActiveView } from './components/TopBar';
 import { UploadWorkspace } from './components/UploadWorkspace';
+import type { AnalysisErrorState } from './components/UploadWorkspace';
 import { ImportantQuestionsView } from './components/ImportantQuestionsView';
 import { TopicWeightageView } from './components/TopicWeightageView';
 import { PredictedMockPaperView } from './components/PredictedMockPaperView';
 import { PrintableReport } from './components/PrintableReport';
 import type { PrintMode } from './components/PrintableReport';
 import { WatermarkOverlay } from './components/WatermarkOverlay';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import { createSamplePaperFiles } from './data/samplePapers';
+import { computePapersFingerprint, preparePapersForUpload } from './utils/fileExtractor';
+import {
+  getCachedAnalysisByHash,
+  getCachedModelAnswer,
+  hydrateModelAnswersForAnalysis,
+  loadCustomApiKey,
+  saveAnalysisToHashCache,
+  saveCustomApiKey,
+  saveModelAnswerToCache,
+} from './utils/cache';
 import type { AnalysisResult, ImportantQuestion, ModelAnswer } from './types';
 
 const RECENT_STORAGE_KEY = 'pyq_analyzer_recent_v1';
 const THEME_STORAGE_KEY = 'pyq_analyzer_theme_v1';
 const MAX_RECENT_ANALYSES = 6;
+const MAX_FILES = 5;
+const MAX_TOTAL_BYTES = 15 * 1024 * 1024; // 15 MB total
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.docx', '.txt'];
 
@@ -54,10 +68,15 @@ export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [subjectName, setSubjectName] = useState('');
   const [examTag, setExamTag] = useState('');
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [progressNote, setProgressNote] = useState<string | null>(null);
+  const [limitWarning, setLimitWarning] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<AnalysisErrorState | null>(null);
+  const [retryCountdown, setRetryCountdown] = useState(0);
 
   const [currentAnalysis, setCurrentAnalysis] = useState<AnalysisResult | null>(null);
+  const [loadedFromCache, setLoadedFromCache] = useState(false);
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisResult[]>(() =>
     loadRecentAnalyses()
   );
@@ -67,6 +86,11 @@ export default function App() {
   const [loadingAnswerIds, setLoadingAnswerIds] = useState<Record<string, boolean>>({});
   const [answerErrors, setAnswerErrors] = useState<Record<string, string | null>>({});
   const [printMode, setPrintMode] = useState<PrintMode>('important');
+
+  const [customApiKey, setCustomApiKey] = useState<string>(() => loadCustomApiKey());
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     const isDark = theme === 'dark';
@@ -89,45 +113,97 @@ export default function App() {
     }
   }, [recentAnalyses]);
 
+  useEffect(() => {
+    if (retryCountdown <= 0) return;
+    const timer = window.setInterval(() => {
+      setRetryCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [retryCountdown]);
+
   const handleToggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
 
+  const handleSaveCustomApiKey = useCallback((key: string) => {
+    saveCustomApiKey(key);
+    setCustomApiKey(key);
+    // Reset rate limit countdown immediately if user switched keys
+    setRetryCountdown(0);
+    setAnalysisError(null);
+  }, []);
+
   const handleAddFiles = useCallback((incoming: File[]) => {
     setAnalysisError(null);
-    const rejected: string[] = [];
-    const accepted: File[] = [];
+    setLimitWarning(null);
+
+    const unsupported: string[] = [];
+    const validIncoming: File[] = [];
 
     for (const file of incoming) {
       if (isSupportedFile(file)) {
-        accepted.push(file);
+        validIncoming.push(file);
       } else {
-        rejected.push(file.name);
+        unsupported.push(file.name);
       }
     }
 
-    if (rejected.length > 0) {
-      setAnalysisError(
-        `Skipped unsupported file(s): ${rejected.join(', ')}. Supported formats: PDF, JPG, PNG, DOCX, TXT.`
-      );
-    }
+    setFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.name}-${f.size}`));
+      const next = [...prev];
+      let currentBytes = prev.reduce((sum, f) => sum + f.size, 0);
+      const skippedByCount: string[] = [];
+      const skippedBySize: string[] = [];
 
-    if (accepted.length > 0) {
-      setFiles((prev) => {
-        const existingKeys = new Set(prev.map((f) => `${f.name}-${f.size}`));
-        const deduped = accepted.filter((f) => !existingKeys.has(`${f.name}-${f.size}`));
-        return [...prev, ...deduped].slice(0, 20);
-      });
-    }
+      for (const file of validIncoming) {
+        const key = `${file.name}-${file.size}`;
+        if (existingKeys.has(key)) continue;
+
+        if (next.length >= MAX_FILES) {
+          skippedByCount.push(file.name);
+          continue;
+        }
+        if (currentBytes + file.size > MAX_TOTAL_BYTES) {
+          skippedBySize.push(file.name);
+          continue;
+        }
+        existingKeys.add(key);
+        next.push(file);
+        currentBytes += file.size;
+      }
+
+      const warnings: string[] = [];
+      if (unsupported.length > 0) {
+        warnings.push(`Unsupported format skipped: ${unsupported.join(', ')}.`);
+      }
+      if (skippedByCount.length > 0) {
+        warnings.push(
+          `Maximum ${MAX_FILES} files allowed per analysis. Skipped: ${skippedByCount.join(', ')}.`
+        );
+      }
+      if (skippedBySize.length > 0) {
+        warnings.push(
+          `Total upload limit is 15 MB. Skipped to stay under limit: ${skippedBySize.join(', ')}.`
+        );
+      }
+      if (warnings.length > 0) {
+        setLimitWarning(warnings.join(' '));
+      }
+
+      return next;
+    });
   }, []);
 
   const handleRemoveFile = useCallback((index: number) => {
     setFiles((prev) => prev.filter((_, idx) => idx !== index));
+    setLimitWarning(null);
   }, []);
 
   const handleClearFiles = useCallback(() => {
     setFiles([]);
     setAnalysisError(null);
+    setLimitWarning(null);
+    setRetryCountdown(0);
   }, []);
 
   const handleLoadSamples = useCallback(() => {
@@ -136,66 +212,164 @@ export default function App() {
     setSubjectName(sample.subjectName);
     setExamTag(sample.examTag);
     setAnalysisError(null);
+    setLimitWarning(null);
+    setRetryCountdown(0);
     setActiveView('upload');
   }, []);
 
-  const handleAnalyze = useCallback(async () => {
-    if (files.length === 0 || isAnalyzing) return;
+  const runAnalysis = useCallback(
+    async (options?: { forceReanalyze?: boolean }) => {
+      const forceReanalyze = Boolean(options?.forceReanalyze);
+      if (files.length === 0 || isSubmittingRef.current) return;
 
-    setIsAnalyzing(true);
-    setAnalysisError(null);
-
-    try {
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append('files', file);
-      });
-      if (subjectName.trim()) {
-        formData.append('subjectName', subjectName.trim());
-      }
-      if (examTag.trim()) {
-        formData.append('examTag', examTag.trim());
-      }
-
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          typeof data?.error === 'string'
-            ? data.error
-            : `Analysis failed with status ${response.status}.`
+      const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+      if (files.length > MAX_FILES || totalBytes > MAX_TOTAL_BYTES) {
+        setLimitWarning(
+          `Please keep uploads within ${MAX_FILES} files and 15 MB total before analyzing.`
         );
+        return;
       }
 
-      const result = data as AnalysisResult;
-      setCurrentAnalysis(result);
-      setSelectedTopic('all');
-      setModelAnswers({});
-      setLoadingAnswerIds({});
-      setAnswerErrors({});
-      setRecentAnalyses((prev) =>
-        [result, ...prev.filter((item) => item.id !== result.id)].slice(0, MAX_RECENT_ANALYSES)
-      );
-      setActiveView('questions');
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'An unexpected network error occurred while analyzing your papers.';
-      setAnalysisError(message);
-    } finally {
-      setIsAnalyzing(false);
+      isSubmittingRef.current = true;
+      setIsAnalyzing(true);
+      setAnalysisError(null);
+      setLimitWarning(null);
+      setProgressNote('Extracting text from digital PDFs, DOCX, and TXT locally...');
+
+      try {
+        // Step 1: Extract plain text locally on client side for digital PDFs/DOCX/TXT
+        const batch = await preparePapersForUpload(files);
+        const fingerprint = await computePapersFingerprint({
+          files,
+          subjectName,
+          examTag,
+          extractedTexts: batch.extractedTexts,
+        });
+
+        // Step 2: Check smart localStorage cache before spending any API tokens
+        if (!forceReanalyze) {
+          const cached = getCachedAnalysisByHash(fingerprint);
+          if (cached) {
+            setCurrentAnalysis(cached);
+            setLoadedFromCache(true);
+            setSelectedTopic('all');
+            setModelAnswers(hydrateModelAnswersForAnalysis(cached));
+            setLoadingAnswerIds({});
+            setAnswerErrors({});
+            setActiveView('questions');
+            return;
+          }
+        }
+
+        const extractedCount = batch.extractedTexts.length;
+        const binaryCount = batch.binaryFiles.length;
+        setProgressNote(
+          `Sending ${extractedCount} text-extracted ${
+            extractedCount === 1 ? 'paper' : 'papers'
+          }${binaryCount > 0 ? ` + ${binaryCount} scanned ${binaryCount === 1 ? 'file' : 'files'}` : ''} in a single Gemini Flash call...`
+        );
+
+        const formData = new FormData();
+        if (batch.extractedTexts.length > 0) {
+          formData.append('extractedTexts', JSON.stringify(batch.extractedTexts));
+        }
+        batch.binaryFiles.forEach((file) => {
+          formData.append('files', file);
+        });
+        if (subjectName.trim()) {
+          formData.append('subjectName', subjectName.trim());
+        }
+        if (examTag.trim()) {
+          formData.append('examTag', examTag.trim());
+        }
+
+        const headers: Record<string, string> = {};
+        if (customApiKey.trim()) {
+          headers['x-gemini-api-key'] = customApiKey.trim();
+        }
+
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const isRateLimited =
+            response.status === 429 ||
+            response.status === 503 ||
+            data?.code === 'RATE_LIMITED' ||
+            data?.code === 'SERVICE_UNAVAILABLE';
+          const isAuthError = response.status === 403 || data?.code === 'AUTH_ERROR';
+
+          if (isRateLimited) {
+            const waitSec =
+              typeof data?.retryAfterSeconds === 'number' && data.retryAfterSeconds > 0
+                ? data.retryAfterSeconds
+                : 30;
+            setRetryCountdown(waitSec);
+          }
+
+          setAnalysisError({
+            message:
+              typeof data?.error === 'string'
+                ? data.error
+                : `Analysis failed with status ${response.status}.`,
+            isRateLimited,
+            isAuthError,
+          });
+          setActiveView('upload');
+          return;
+        }
+
+        const result = data as AnalysisResult;
+        saveAnalysisToHashCache(fingerprint, result);
+
+        setCurrentAnalysis(result);
+        setLoadedFromCache(false);
+        setSelectedTopic('all');
+        setModelAnswers(hydrateModelAnswersForAnalysis(result));
+        setLoadingAnswerIds({});
+        setAnswerErrors({});
+        setRecentAnalyses((prev) =>
+          [result, ...prev.filter((item) => item.id !== result.id)].slice(0, MAX_RECENT_ANALYSES)
+        );
+        setActiveView('questions');
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'An unexpected network error occurred while analyzing your papers.';
+        setAnalysisError({ message });
+        setActiveView('upload');
+      } finally {
+        isSubmittingRef.current = false;
+        setIsAnalyzing(false);
+        setProgressNote(null);
+      }
+    },
+    [files, subjectName, examTag, customApiKey]
+  );
+
+  const handleAnalyze = useCallback(() => {
+    void runAnalysis({ forceReanalyze: false });
+  }, [runAnalysis]);
+
+  const handleForceReanalyze = useCallback(() => {
+    if (files.length === 0) {
+      setActiveView('upload');
+      setLimitWarning('Re-select your exam paper files to run a fresh Gemini analysis.');
+      return;
     }
-  }, [files, subjectName, examTag, isAnalyzing]);
+    void runAnalysis({ forceReanalyze: true });
+  }, [files.length, runAnalysis]);
 
   const handleOpenRecent = useCallback((analysis: AnalysisResult) => {
     setCurrentAnalysis(analysis);
+    setLoadedFromCache(true);
     setSelectedTopic('all');
-    setModelAnswers({});
+    setModelAnswers(hydrateModelAnswersForAnalysis(analysis));
     setLoadingAnswerIds({});
     setAnswerErrors({});
     setAnalysisError(null);
@@ -210,13 +384,29 @@ export default function App() {
     async (question: ImportantQuestion) => {
       if (!currentAnalysis) return;
 
+      // Check state & localStorage cache first — 0 API tokens if already generated!
+      const cachedAnswer =
+        modelAnswers[question.id] ??
+        getCachedModelAnswer(currentAnalysis.summary.subjectName, question.questionText);
+      if (cachedAnswer) {
+        setModelAnswers((prev) => ({ ...prev, [question.id]: cachedAnswer }));
+        return;
+      }
+
+      if (loadingAnswerIds[question.id]) return;
+
       setLoadingAnswerIds((prev) => ({ ...prev, [question.id]: true }));
       setAnswerErrors((prev) => ({ ...prev, [question.id]: null }));
 
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (customApiKey.trim()) {
+          headers['x-gemini-api-key'] = customApiKey.trim();
+        }
+
         const response = await fetch('/api/model-answer', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             questionText: question.questionText,
             topic: question.topic,
@@ -236,7 +426,9 @@ export default function App() {
           );
         }
 
-        setModelAnswers((prev) => ({ ...prev, [question.id]: data as ModelAnswer }));
+        const answer = data as ModelAnswer;
+        saveModelAnswerToCache(currentAnalysis.summary.subjectName, question.questionText, answer);
+        setModelAnswers((prev) => ({ ...prev, [question.id]: answer }));
       } catch (err) {
         const message =
           err instanceof Error
@@ -247,7 +439,7 @@ export default function App() {
         setLoadingAnswerIds((prev) => ({ ...prev, [question.id]: false }));
       }
     },
-    [currentAnalysis]
+    [currentAnalysis, customApiKey, modelAnswers, loadingAnswerIds]
   );
 
   const triggerPrint = useCallback((mode: PrintMode) => {
@@ -293,7 +485,9 @@ export default function App() {
         hasAnalysis={Boolean(currentAnalysis)}
         isAnalyzing={isAnalyzing}
         theme={theme}
+        hasCustomApiKey={customApiKey.trim().length > 0}
         onToggleTheme={handleToggleTheme}
+        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
         onSelectView={(view) => {
           if (view === 'upload') setActiveView('upload');
           else if (currentAnalysis) setActiveView(view);
@@ -306,11 +500,17 @@ export default function App() {
         {activeView === 'upload' || !currentAnalysis ? (
           <UploadWorkspace
             files={files}
+            maxFiles={MAX_FILES}
+            maxTotalBytes={MAX_TOTAL_BYTES}
             subjectName={subjectName}
             examTag={examTag}
             isAnalyzing={isAnalyzing}
+            progressNote={progressNote}
+            limitWarning={limitWarning}
             error={analysisError}
+            retryCountdown={retryCountdown}
             recentAnalyses={recentAnalyses}
+            hasCustomApiKey={customApiKey.trim().length > 0}
             onAddFiles={handleAddFiles}
             onRemoveFile={handleRemoveFile}
             onClearFiles={handleClearFiles}
@@ -321,9 +521,36 @@ export default function App() {
             onOpenRecent={handleOpenRecent}
             onDeleteRecent={handleDeleteRecent}
             onDismissError={() => setAnalysisError(null)}
+            onDismissWarning={() => setLimitWarning(null)}
+            onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
           />
         ) : (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+            {/* Cache Status Bar when loaded with 0 API calls */}
+            {loadedFromCache && (
+              <div className="bg-emerald-50/80 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-900/70 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 text-xs sm:text-sm text-emerald-900 dark:text-emerald-200">
+                  <Database
+                    className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span className="font-medium">Loaded from cache (0 API calls)</span>
+                  <span className="hidden sm:inline text-emerald-700 dark:text-emerald-400">
+                    · Identical paper set matched in browser storage
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleForceReanalyze}
+                  disabled={isAnalyzing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-900 dark:text-emerald-200 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100/60 dark:hover:bg-emerald-950 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Force Re-analyze</span>
+                </button>
+              </div>
+            )}
+
             {/* Subject Header & Summary KPI Strip */}
             <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
               <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800">
@@ -480,6 +707,7 @@ export default function App() {
                 loadingAnswerIds={loadingAnswerIds}
                 answerErrors={answerErrors}
                 onGenerateModelAnswer={handleGenerateModelAnswer}
+                onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
               />
             )}
 
@@ -499,6 +727,7 @@ export default function App() {
                 answerErrors={answerErrors}
                 onGenerateModelAnswer={handleGenerateModelAnswer}
                 onPrintMockPaper={() => triggerPrint('mock')}
+                onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
               />
             )}
           </div>
@@ -511,9 +740,17 @@ export default function App() {
           <p>
             PYQ Analyzer · <span className="font-mono">pyq-analyzer-by-vk</span>
           </p>
-          <p>Supports PDF, JPG/PNG scans, DOCX, and TXT</p>
+          <p>Max 5 files (15 MB total) · Client-side extraction · Local smart cache</p>
         </div>
       </footer>
+
+      {/* Optional BYOK API Key Settings Modal */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        savedKey={customApiKey}
+        onSaveKey={handleSaveCustomApiKey}
+        onClose={() => setIsApiKeyModalOpen(false)}
+      />
 
       {/* Dedicated Print / PDF Export Sheet */}
       {currentAnalysis && (

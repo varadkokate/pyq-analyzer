@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertCircle, Check, Copy, RefreshCw } from 'lucide-react';
+import { AlertCircle, Check, Copy, KeyRound, RefreshCw } from 'lucide-react';
 import type { ModelAnswer } from '../types';
 
 interface ModelAnswerPanelProps {
@@ -7,6 +7,7 @@ interface ModelAnswerPanelProps {
   isLoading: boolean;
   error?: string | null;
   onRetry: () => void;
+  onOpenApiKeyModal?: () => void;
 }
 
 export function ModelAnswerPanel({
@@ -14,6 +15,7 @@ export function ModelAnswerPanel({
   isLoading,
   error,
   onRetry,
+  onOpenApiKeyModal,
 }: ModelAnswerPanelProps) {
   const [copied, setCopied] = useState(false);
 
@@ -35,6 +37,11 @@ export function ModelAnswerPanel({
   }
 
   if (error) {
+    const looksQuotaRelated =
+      error.toLowerCase().includes('quota') ||
+      error.toLowerCase().includes('rate limit') ||
+      error.toLowerCase().includes('api key');
+
     return (
       <div className="mt-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/70 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-start gap-2.5">
@@ -44,14 +51,26 @@ export function ModelAnswerPanel({
           />
           <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
         </div>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-800 dark:text-red-200 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950 rounded-md transition-colors whitespace-nowrap"
-        >
-          <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-          <span>Retry</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {looksQuotaRelated && onOpenApiKeyModal && (
+            <button
+              type="button"
+              onClick={onOpenApiKeyModal}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap"
+            >
+              <KeyRound className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>API Key Settings</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-800 dark:text-red-200 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950 rounded-md transition-colors whitespace-nowrap"
+          >
+            <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Retry</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -93,7 +112,7 @@ export function ModelAnswerPanel({
     <div className="mt-4 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-5">
       <div className="flex items-center justify-between gap-4 pb-3 border-b border-slate-200 dark:border-slate-800">
         <h4 className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
-          Exam-Ready Model Answer
+          Exam-Ready Model Answer <span className="font-normal text-slate-400 dark:text-slate-500">· Cached locally</span>
         </h4>
         <button
           type="button"

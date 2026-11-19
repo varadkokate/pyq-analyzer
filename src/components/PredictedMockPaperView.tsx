@@ -10,6 +10,7 @@ interface PredictedMockPaperViewProps {
   answerErrors: Record<string, string | null>;
   onGenerateModelAnswer: (question: ImportantQuestion) => void;
   onPrintMockPaper: () => void;
+  onOpenApiKeyModal?: () => void;
 }
 
 export function PredictedMockPaperView({
@@ -19,6 +20,7 @@ export function PredictedMockPaperView({
   answerErrors,
   onGenerateModelAnswer,
   onPrintMockPaper,
+  onOpenApiKeyModal,
 }: PredictedMockPaperViewProps) {
   const [showHints, setShowHints] = useState(false);
   const [expandedAnswerIds, setExpandedAnswerIds] = useState<Record<string, boolean>>({});
@@ -257,6 +259,7 @@ export function PredictedMockPaperView({
                                 studyTip: '',
                               })
                             }
+                            onOpenApiKeyModal={onOpenApiKeyModal}
                           />
                         </div>
                       )}

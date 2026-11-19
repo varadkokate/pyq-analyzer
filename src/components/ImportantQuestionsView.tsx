@@ -21,6 +21,7 @@ interface ImportantQuestionsViewProps {
   loadingAnswerIds: Record<string, boolean>;
   answerErrors: Record<string, string | null>;
   onGenerateModelAnswer: (question: ImportantQuestion) => void;
+  onOpenApiKeyModal?: () => void;
 }
 
 const PRIORITY_STYLES: Record<PriorityTier, { text: string; symbol: string }> = {
@@ -38,6 +39,7 @@ export function ImportantQuestionsView({
   loadingAnswerIds,
   answerErrors,
   onGenerateModelAnswer,
+  onOpenApiKeyModal,
 }: ImportantQuestionsViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<'All' | PriorityTier>('All');
@@ -412,6 +414,7 @@ export function ImportantQuestionsView({
                       isLoading={isLoadingAnswer}
                       error={answerError}
                       onRetry={() => onGenerateModelAnswer(q)}
+                      onOpenApiKeyModal={onOpenApiKeyModal}
                     />
                   </div>
                 )}
