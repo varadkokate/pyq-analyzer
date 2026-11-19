@@ -26,11 +26,14 @@ export function PrintableReport({
         : `${mins} Minutes`;
 
     return (
-      <div className="print-only text-slate-900">
+      <div className="print-only relative z-10 text-slate-900">
         <header className="pb-4 border-b-2 border-slate-900">
-          <p className="text-xs text-slate-500">PYQ Analyzer — Predicted Practice Examination</p>
-          <h1 className="mt-1 text-2xl font-bold">{predictedMockPaper.title}</h1>
-          <div className="mt-1 flex items-baseline justify-between text-sm">
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-xs text-slate-600">PYQ Analyzer — Predicted Practice Examination</p>
+            <p className="text-xs font-mono text-slate-500">pyq-analyzer-by-vk</p>
+          </div>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">{predictedMockPaper.title}</h1>
+          <div className="mt-1 flex items-baseline justify-between text-sm text-slate-800">
             <span>{predictedMockPaper.subtitle || summary.examTag}</span>
             <span className="font-mono tabular-nums">
               Time: {durationLabel} · Max Marks: {predictedMockPaper.totalMarks}
@@ -49,12 +52,15 @@ export function PrintableReport({
           {predictedMockPaper.sections.map((section, sIdx) => (
             <section key={sIdx}>
               <div className="pb-1.5 border-b border-slate-300 flex items-baseline justify-between">
-                <h2 className="text-base font-bold">{section.sectionName}</h2>
+                <h2 className="text-base font-bold text-slate-900">{section.sectionName}</h2>
                 <span className="text-xs text-slate-600">{section.instructions}</span>
               </div>
               <ol className="mt-3 space-y-3">
                 {section.questions.map((q, qIdx) => (
-                  <li key={qIdx} className="print-break-inside-avoid flex items-start justify-between gap-4 text-sm">
+                  <li
+                    key={qIdx}
+                    className="print-break-inside-avoid flex items-start justify-between gap-4 text-sm text-slate-900"
+                  >
                     <div className="flex items-start gap-2.5">
                       <span className="font-mono font-semibold">{q.number}</span>
                       <span>{q.questionText}</span>
@@ -71,10 +77,13 @@ export function PrintableReport({
   }
 
   return (
-    <div className="print-only text-slate-900">
+    <div className="print-only relative z-10 text-slate-900">
       <header className="pb-4 border-b-2 border-slate-900">
-        <p className="text-xs text-slate-500">PYQ Analyzer — Important Questions Sheet</p>
-        <h1 className="mt-1 text-2xl font-bold">{summary.subjectName}</h1>
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="text-xs text-slate-600">PYQ Analyzer — Important Questions Sheet</p>
+          <p className="text-xs font-mono text-slate-500">pyq-analyzer-by-vk</p>
+        </div>
+        <h1 className="mt-1 text-2xl font-bold text-slate-900">{summary.subjectName}</h1>
         <p className="mt-0.5 text-sm text-slate-700">
           {summary.examTag} · {summary.totalPapersAnalyzed} Papers Analyzed ·{' '}
           {summary.totalUniqueConcepts} Ranked Concepts · {summary.highPriorityCount} High Priority
@@ -85,10 +94,10 @@ export function PrintableReport({
       {/* Topic Weightage Summary Table */}
       {topicWeightage.length > 0 && (
         <section className="mt-5">
-          <h2 className="text-sm font-bold pb-1.5 border-b border-slate-300">
+          <h2 className="text-sm font-bold pb-1.5 border-b border-slate-300 text-slate-900">
             Topic-Wise Weightage
           </h2>
-          <table className="w-full mt-2 text-xs border-collapse">
+          <table className="w-full mt-2 text-xs border-collapse text-slate-900">
             <thead>
               <tr className="border-b border-slate-300 text-left">
                 <th className="py-1.5">Topic / Unit</th>
@@ -113,7 +122,7 @@ export function PrintableReport({
 
       {/* Ranked Important Questions */}
       <section className="mt-6">
-        <h2 className="text-sm font-bold pb-1.5 border-b border-slate-300">
+        <h2 className="text-sm font-bold pb-1.5 border-b border-slate-300 text-slate-900">
           Ranked Important Questions
         </h2>
         <div className="mt-3 divide-y divide-slate-200">
@@ -123,11 +132,13 @@ export function PrintableReport({
               <article key={q.id} className="py-3 print-break-inside-avoid">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-2.5">
-                    <span className="font-mono text-xs font-bold pt-0.5">
+                    <span className="font-mono text-xs font-bold pt-0.5 text-slate-900">
                       {String(q.rank).padStart(2, '0')}.
                     </span>
                     <div>
-                      <p className="text-sm font-medium leading-snug">{q.questionText}</p>
+                      <p className="text-sm font-medium leading-snug text-slate-900">
+                        {q.questionText}
+                      </p>
                       <p className="mt-1 text-xs text-slate-600">
                         {q.priority} Priority · {q.topic} · Appeared {q.frequencyCount}× (
                         {q.appearedIn.join(', ')})
@@ -137,13 +148,13 @@ export function PrintableReport({
                       )}
                     </div>
                   </div>
-                  <span className="font-mono text-xs font-semibold shrink-0">
+                  <span className="font-mono text-xs font-semibold shrink-0 text-slate-900">
                     {q.marksLabel || `${q.estimatedMarks}M`}
                   </span>
                 </div>
 
                 {answer && (
-                  <div className="mt-2 ml-6 p-3 border border-slate-300 rounded text-xs space-y-1.5">
+                  <div className="mt-2 ml-6 p-3 border border-slate-300 rounded text-xs space-y-1.5 text-slate-900">
                     <p className="font-semibold">Model Answer:</p>
                     <p className="leading-relaxed whitespace-pre-line">{answer.directAnswer}</p>
                     {answer.keyPoints.length > 0 && (

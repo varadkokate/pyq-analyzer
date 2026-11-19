@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
@@ -21,12 +22,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+.print-only {
+  display: none;
+}
+
 @media print {
   @page {
     margin: 14mm 12mm;
     size: auto;
   }
 
+  html,
   body {
     background: #ffffff !important;
     color: #0f172a !important;
@@ -42,6 +48,15 @@
     display: block !important;
   }
 
+  .print-watermark-layer {
+    display: flex !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+  }
+
   .print-break-inside-avoid {
     break-inside: avoid;
     page-break-inside: avoid;
@@ -51,8 +66,4 @@
     break-before: page;
     page-break-before: always;
   }
-}
-
-.print-only {
-  display: none;
 }

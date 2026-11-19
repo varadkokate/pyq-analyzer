@@ -24,9 +24,9 @@ interface ImportantQuestionsViewProps {
 }
 
 const PRIORITY_STYLES: Record<PriorityTier, { text: string; symbol: string }> = {
-  High: { text: 'text-red-700 font-semibold', symbol: '▲' },
-  Medium: { text: 'text-amber-700 font-semibold', symbol: '◆' },
-  Low: { text: 'text-slate-600 font-medium', symbol: '○' },
+  High: { text: 'text-red-700 dark:text-red-400 font-semibold', symbol: '▲' },
+  Medium: { text: 'text-amber-700 dark:text-amber-400 font-semibold', symbol: '◆' },
+  Low: { text: 'text-slate-600 dark:text-slate-400 font-medium', symbol: '○' },
 };
 
 export function ImportantQuestionsView({
@@ -120,13 +120,13 @@ export function ImportantQuestionsView({
   return (
     <div className="space-y-5">
       {/* Interactive Filter Toolbar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Priority Segmented Control */}
           <div
             role="group"
             aria-label="Filter by priority"
-            className="inline-flex items-center p-1 bg-slate-100 rounded-lg overflow-x-auto max-w-full"
+            className="inline-flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-lg overflow-x-auto max-w-full"
           >
             {(['All', 'High', 'Medium', 'Low'] as const).map((tier) => {
               const isActive = priorityFilter === tier;
@@ -137,12 +137,12 @@ export function ImportantQuestionsView({
                   onClick={() => setPriorityFilter(tier)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                     isActive
-                      ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   {tier}{' '}
-                  <span className="font-mono tabular-nums text-slate-400 ml-0.5">
+                  <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 ml-0.5">
                     {priorityCounts[tier]}
                   </span>
                 </button>
@@ -153,7 +153,7 @@ export function ImportantQuestionsView({
           {/* Search Input */}
           <div className="relative flex-1 lg:max-w-sm">
             <Search
-              className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
               aria-hidden="true"
             />
             <input
@@ -162,23 +162,26 @@ export function ImportantQuestionsView({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search questions, topics, or years..."
               aria-label="Search important questions"
-              className="w-full h-9 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+              className="w-full h-9 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
             />
           </div>
         </div>
 
         {/* Secondary Filter Selects Row */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <label htmlFor="topic-filter" className="text-xs font-medium text-slate-500 whitespace-nowrap">
+              <label
+                htmlFor="topic-filter"
+                className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap"
+              >
                 Topic
               </label>
               <select
                 id="topic-filter"
                 value={selectedTopic}
                 onChange={(e) => onSelectTopic(e.target.value)}
-                className="h-9 pl-3 pr-8 text-xs font-medium text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 max-w-[240px]"
+                className="h-9 pl-3 pr-8 text-xs font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 max-w-[240px]"
               >
                 <option value="all">All Topics ({topics.length})</option>
                 {topics.map((topic) => (
@@ -190,14 +193,17 @@ export function ImportantQuestionsView({
             </div>
 
             <div className="flex items-center gap-2">
-              <label htmlFor="marks-filter" className="text-xs font-medium text-slate-500 whitespace-nowrap">
+              <label
+                htmlFor="marks-filter"
+                className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap"
+              >
                 Marks
               </label>
               <select
                 id="marks-filter"
                 value={marksFilter}
                 onChange={(e) => setMarksFilter(e.target.value as MarksFilter)}
-                className="h-9 pl-3 pr-8 text-xs font-medium text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="h-9 pl-3 pr-8 text-xs font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 <option value="all">All Marks</option>
                 <option value="short">Short (1–4 Marks)</option>
@@ -207,14 +213,17 @@ export function ImportantQuestionsView({
             </div>
 
             <div className="flex items-center gap-2">
-              <label htmlFor="sort-order" className="text-xs font-medium text-slate-500 whitespace-nowrap">
+              <label
+                htmlFor="sort-order"
+                className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap"
+              >
                 Sort
               </label>
               <select
                 id="sort-order"
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as SortKey)}
-                className="h-9 pl-3 pr-8 text-xs font-medium text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="h-9 pl-3 pr-8 text-xs font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 <option value="rank">Importance Rank</option>
                 <option value="frequency">Highest Frequency</option>
@@ -223,7 +232,7 @@ export function ImportantQuestionsView({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
             <span className="font-mono tabular-nums">
               Showing {filteredQuestions.length} of {questions.length}
             </span>
@@ -231,7 +240,7 @@ export function ImportantQuestionsView({
               <button
                 type="button"
                 onClick={resetFilters}
-                className="inline-flex items-center gap-1 font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap"
+                className="inline-flex items-center gap-1 font-medium text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 whitespace-nowrap"
               >
                 <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Reset</span>
@@ -243,25 +252,25 @@ export function ImportantQuestionsView({
 
       {/* Empty Filter State */}
       {filteredQuestions.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
-          <p className="text-base font-semibold text-slate-900">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center">
+          <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
             No questions match your current filters
           </p>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Try clearing your search term or selecting a broader priority, topic, or marks bracket.
           </p>
           <button
             type="button"
             onClick={resetFilters}
-            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors"
+            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-lg transition-colors"
           >
             <RotateCcw className="w-4 h-4" aria-hidden="true" />
             <span>Reset Filters</span>
           </button>
         </div>
       ) : (
-        /* Ranked Question List — Single-Elevation White Surface with Hairline Dividers */
-        <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-200">
+        /* Ranked Question List — Single-Elevation Surface with Hairline Dividers */
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-200 dark:divide-slate-800">
           {filteredQuestions.map((q) => {
             const pStyle = PRIORITY_STYLES[q.priority];
             const isAnswerOpen = Boolean(expandedAnswerIds[q.id]);
@@ -275,19 +284,19 @@ export function ImportantQuestionsView({
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-6">
                   {/* Left: Rank + Question Text */}
                   <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                    <span className="font-mono text-sm font-semibold text-slate-400 tabular-nums pt-0.5 shrink-0">
+                    <span className="font-mono text-sm font-semibold text-slate-400 dark:text-slate-500 tabular-nums pt-0.5 shrink-0">
                       {String(q.rank).padStart(2, '0')}
                     </span>
                     <div className="min-w-0 flex-1">
                       <h3
-                        className="text-base font-medium text-slate-900 leading-snug"
+                        className="text-base font-medium text-slate-900 dark:text-slate-100 leading-snug"
                         style={{ fontFamily: 'var(--font-sans)' }}
                       >
                         {q.questionText}
                       </h3>
 
                       {/* Clean Unboxed Metadata Line (Zero-Pill Discipline) */}
-                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                         <span className={pStyle.text}>
                           <span aria-hidden="true" className="mr-1 text-[10px]">
                             {pStyle.symbol}
@@ -298,21 +307,25 @@ export function ImportantQuestionsView({
                         <button
                           type="button"
                           onClick={() => onSelectTopic(q.topic)}
-                          className="text-slate-700 hover:text-blue-700 underline-offset-2 hover:underline font-medium"
+                          className="text-slate-700 dark:text-slate-300 hover:text-blue-700 dark:hover:text-blue-400 underline-offset-2 hover:underline font-medium"
                         >
                           {q.topic}
                         </button>
                         <span aria-hidden="true">·</span>
                         <span>
                           Appeared in:{' '}
-                          <span className="text-slate-700">{q.appearedIn.join(', ')}</span>
+                          <span className="text-slate-700 dark:text-slate-300">
+                            {q.appearedIn.join(', ')}
+                          </span>
                         </span>
                       </div>
 
                       {/* Examiner Study Tip */}
                       {q.studyTip && (
-                        <p className="mt-2 text-xs text-slate-600 leading-relaxed">
-                          <span className="font-medium text-slate-700">Focus: </span>
+                        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
+                            Focus:{' '}
+                          </span>
                           {q.studyTip}
                         </p>
                       )}
@@ -321,10 +334,10 @@ export function ImportantQuestionsView({
 
                   {/* Right: Tabular Frequency & Marks Metric Block */}
                   <div className="flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-start gap-3 sm:gap-1 pl-8 sm:pl-0 shrink-0 font-mono tabular-nums">
-                    <span className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+                    <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                       {q.marksLabel || `${q.estimatedMarks} Marks`}
                     </span>
-                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                       Asked {q.frequencyCount}×
                     </span>
                   </div>
@@ -339,8 +352,8 @@ export function ImportantQuestionsView({
                       disabled={isLoadingAnswer}
                       className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                         isAnswerOpen && hasAnswer
-                          ? 'bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200/70'
-                          : 'bg-white border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300'
+                          ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700'
+                          : 'bg-white dark:bg-slate-900 border-blue-200 dark:border-blue-800/80 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:border-blue-300 dark:hover:border-blue-700'
                       }`}
                     >
                       <BookOpen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -359,7 +372,7 @@ export function ImportantQuestionsView({
                       <button
                         type="button"
                         onClick={() => toggleVariants(q.id)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors whitespace-nowrap"
                       >
                         <span>
                           {q.variantExamples.length}{' '}
@@ -377,11 +390,11 @@ export function ImportantQuestionsView({
 
                 {/* Past Wording Variants */}
                 {isVariantsOpen && q.variantExamples.length > 0 && (
-                  <div className="mt-3 sm:ml-8 pt-3 border-t border-slate-100">
-                    <p className="text-xs font-medium text-slate-500 mb-1.5">
+                  <div className="mt-3 sm:ml-8 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
                       Alternate phrasings grouped into this concept
                     </p>
-                    <ul className="space-y-1 text-xs text-slate-600">
+                    <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
                       {q.variantExamples.map((variant, idx) => (
                         <li key={idx} className="leading-relaxed">
                           &ldquo;{variant}&rdquo;

@@ -25,9 +25,11 @@ export function PredictedMockPaperView({
 
   if (!mockPaper || !mockPaper.sections || mockPaper.sections.length === 0) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
-        <p className="text-base font-semibold text-slate-900">Predicted Mock Paper unavailable</p>
-        <p className="mt-1 text-sm text-slate-500">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center">
+        <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+          Predicted Mock Paper unavailable
+        </p>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Run a fresh analysis to synthesize a practice exam from your papers.
         </p>
       </div>
@@ -78,14 +80,14 @@ export function PredictedMockPaperView({
     <div className="space-y-4">
       {/* Paper Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
           Synthesized practice exam weighted toward your highest-priority topics
         </p>
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setShowHints((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap"
           >
             {showHints ? (
               <>
@@ -103,7 +105,7 @@ export function PredictedMockPaperView({
           <button
             type="button"
             onClick={onPrintMockPaper}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white rounded-lg transition-colors whitespace-nowrap"
           >
             <Printer className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Print Mock Paper</span>
@@ -112,28 +114,32 @@ export function PredictedMockPaperView({
       </div>
 
       {/* Authentic Exam Paper Sheet */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-10">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10">
         {/* Paper Masthead */}
-        <header className="pb-6 border-b border-slate-300">
+        <header className="pb-6 border-b border-slate-300 dark:border-slate-700">
           <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                 {mockPaper.title}
               </h2>
               {mockPaper.subtitle && (
-                <p className="mt-1 text-sm text-slate-600">{mockPaper.subtitle}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  {mockPaper.subtitle}
+                </p>
               )}
             </div>
-            <div className="text-sm font-mono tabular-nums text-slate-800 sm:text-right shrink-0">
+            <div className="text-sm font-mono tabular-nums text-slate-800 dark:text-slate-200 sm:text-right shrink-0">
               <p>Time: {durationLabel}</p>
               <p>Maximum Marks: {mockPaper.totalMarks}</p>
             </div>
           </div>
 
           {mockPaper.generalInstructions && mockPaper.generalInstructions.length > 0 && (
-            <div className="mt-5 pt-4 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-700 mb-1.5">General Instructions</p>
-              <ul className="space-y-1 text-xs text-slate-600 list-disc pl-4">
+            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                General Instructions
+              </p>
+              <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-400 list-disc pl-4">
                 {mockPaper.generalInstructions.map((inst, idx) => (
                   <li key={idx}>{inst}</li>
                 ))}
@@ -146,19 +152,25 @@ export function PredictedMockPaperView({
         <div className="mt-8 space-y-10">
           {mockPaper.sections.map((section, sIdx) => (
             <section key={`${section.sectionName}-${sIdx}`}>
-              <div className="pb-3 border-b border-slate-200 flex flex-wrap items-baseline justify-between gap-2">
+              <div className="pb-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-baseline justify-between gap-2">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">{section.sectionName}</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    {section.sectionName}
+                  </h3>
                   {section.description && (
-                    <p className="text-xs text-slate-500 mt-0.5">{section.description}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {section.description}
+                    </p>
                   )}
                 </div>
                 {section.instructions && (
-                  <p className="text-xs font-medium text-slate-600">{section.instructions}</p>
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    {section.instructions}
+                  </p>
                 )}
               </div>
 
-              <ol className="mt-4 divide-y divide-slate-100">
+              <ol className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
                 {section.questions.map((mq, qIdx) => {
                   const answerKey = `mock-${sIdx}-${qIdx}`;
                   const isOpen = Boolean(expandedAnswerIds[answerKey]);
@@ -170,15 +182,15 @@ export function PredictedMockPaperView({
                     <li key={answerKey} className="py-4 first:pt-2 last:pb-0">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-3 min-w-0 flex-1">
-                          <span className="font-mono text-sm font-semibold text-slate-500 tabular-nums shrink-0 pt-0.5">
+                          <span className="font-mono text-sm font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0 pt-0.5">
                             {mq.number}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm sm:text-base text-slate-900 leading-relaxed">
+                            <p className="text-sm sm:text-base text-slate-900 dark:text-slate-100 leading-relaxed">
                               {mq.questionText}
                             </p>
 
-                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                               <span>{mq.topic}</span>
                               <span aria-hidden="true">·</span>
                               <button
@@ -193,7 +205,7 @@ export function PredictedMockPaperView({
                                   )
                                 }
                                 disabled={isLoading}
-                                className="inline-flex items-center gap-1 font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap"
+                                className="inline-flex items-center gap-1 font-medium text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 whitespace-nowrap"
                               >
                                 <BookOpen className="w-3.5 h-3.5" aria-hidden="true" />
                                 <span>
@@ -209,15 +221,17 @@ export function PredictedMockPaperView({
                             </div>
 
                             {showHints && mq.hint && (
-                              <p className="mt-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-                                <span className="font-semibold text-slate-700">Hint: </span>
+                              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2">
+                                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                                  Hint:{' '}
+                                </span>
                                 {mq.hint}
                               </p>
                             )}
                           </div>
                         </div>
 
-                        <span className="font-mono text-sm font-semibold text-slate-800 tabular-nums whitespace-nowrap shrink-0">
+                        <span className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-200 tabular-nums whitespace-nowrap shrink-0">
                           [{mq.marks}]
                         </span>
                       </div>

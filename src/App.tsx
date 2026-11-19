@@ -8,10 +8,12 @@ import { TopicWeightageView } from './components/TopicWeightageView';
 import { PredictedMockPaperView } from './components/PredictedMockPaperView';
 import { PrintableReport } from './components/PrintableReport';
 import type { PrintMode } from './components/PrintableReport';
+import { WatermarkOverlay } from './components/WatermarkOverlay';
 import { createSamplePaperFiles } from './data/samplePapers';
 import type { AnalysisResult, ImportantQuestion, ModelAnswer } from './types';
 
 const RECENT_STORAGE_KEY = 'pyq_analyzer_recent_v1';
+const THEME_STORAGE_KEY = 'pyq_analyzer_theme_v1';
 const MAX_RECENT_ANALYSES = 6;
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.docx', '.txt'];
@@ -32,7 +34,22 @@ function loadRecentAnalyses(): AnalysisResult[] {
   }
 }
 
+function getInitialTheme(): 'light' | 'dark' {
+  try {
+    if (document.documentElement.classList.contains('dark')) return 'dark';
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+  } catch {
+    // Fallback to light
+  }
+  return 'light';
+}
+
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => getInitialTheme());
   const [activeView, setActiveView] = useState<ActiveView>('upload');
   const [files, setFiles] = useState<File[]>([]);
   const [subjectName, setSubjectName] = useState('');
@@ -52,6 +69,16 @@ export default function App() {
   const [printMode, setPrintMode] = useState<PrintMode>('important');
 
   useEffect(() => {
+    const isDark = theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [theme]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         RECENT_STORAGE_KEY,
@@ -61,6 +88,10 @@ export default function App() {
       // Ignore storage quota errors
     }
   }, [recentAnalyses]);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
 
   const handleAddFiles = useCallback((incoming: File[]) => {
     setAnalysisError(null);
@@ -146,10 +177,9 @@ export default function App() {
       setModelAnswers({});
       setLoadingAnswerIds({});
       setAnswerErrors({});
-      setRecentAnalyses((prev) => [
-        result,
-        ...prev.filter((item) => item.id !== result.id),
-      ].slice(0, MAX_RECENT_ANALYSES));
+      setRecentAnalyses((prev) =>
+        [result, ...prev.filter((item) => item.id !== result.id)].slice(0, MAX_RECENT_ANALYSES)
+      );
       setActiveView('questions');
     } catch (err) {
       const message =
@@ -254,11 +284,16 @@ export default function App() {
   const topTopic = currentAnalysis?.topicWeightage?.[0] ?? null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="relative min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      {/* Transparent Watermark (Website + Exported PDF) */}
+      <WatermarkOverlay />
+
       <TopBar
         activeView={activeView}
         hasAnalysis={Boolean(currentAnalysis)}
         isAnalyzing={isAnalyzing}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
         onSelectView={(view) => {
           if (view === 'upload') setActiveView('upload');
           else if (currentAnalysis) setActiveView(view);
@@ -267,7 +302,7 @@ export default function App() {
         onLoadSamples={handleLoadSamples}
       />
 
-      <main className="no-print flex-1">
+      <main className="no-print relative z-10 flex-1">
         {activeView === 'upload' || !currentAnalysis ? (
           <UploadWorkspace
             files={files}
@@ -290,19 +325,19 @@ export default function App() {
         ) : (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
             {/* Subject Header & Summary KPI Strip */}
-            <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-200">
+            <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+              <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800">
                 <div className="min-w-0">
-                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                     {currentAnalysis.summary.subjectName}
                   </h1>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                     {currentAnalysis.summary.examTag} · Analyzed{' '}
                     {currentAnalysis.summary.totalPapersAnalyzed}{' '}
                     {currentAnalysis.summary.totalPapersAnalyzed === 1 ? 'paper' : 'papers'} (
                     {currentAnalysis.sourceFiles.join(', ')})
                   </p>
-                  <p className="mt-3 text-sm text-slate-700 leading-relaxed max-w-3xl">
+                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-3xl">
                     {currentAnalysis.summary.keyInsight}
                   </p>
                 </div>
@@ -311,7 +346,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setActiveView('upload')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>New Analysis</span>
@@ -319,7 +354,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => triggerPrint('important')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white rounded-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <Printer className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>Export Sheet as PDF</span>
@@ -328,39 +363,51 @@ export default function App() {
               </div>
 
               {/* 4-Column Tabular Summary Strip */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 divide-x divide-slate-200">
+              <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 divide-x divide-slate-200 dark:divide-slate-800">
                 <div className="p-4 sm:px-6">
-                  <p className="text-xs font-medium text-slate-500">Papers Analyzed</p>
-                  <p className="mt-1 text-2xl font-semibold font-mono tabular-nums text-slate-900">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Papers Analyzed
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold font-mono tabular-nums text-slate-900 dark:text-slate-100">
                     {currentAnalysis.summary.totalPapersAnalyzed}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500 font-mono tabular-nums">
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                     {currentAnalysis.summary.totalQuestionsExtracted} raw questions parsed
                   </p>
                 </div>
 
                 <div className="p-4 sm:px-6">
-                  <p className="text-xs font-medium text-slate-500">Ranked Concepts</p>
-                  <p className="mt-1 text-2xl font-semibold font-mono tabular-nums text-slate-900">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Ranked Concepts
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold font-mono tabular-nums text-slate-900 dark:text-slate-100">
                     {currentAnalysis.summary.totalUniqueConcepts}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">Semantically grouped</p>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Semantically grouped
+                  </p>
                 </div>
 
                 <div className="p-4 sm:px-6">
-                  <p className="text-xs font-medium text-slate-500">High Priority</p>
-                  <p className="mt-1 text-2xl font-semibold font-mono tabular-nums text-red-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    High Priority
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold font-mono tabular-nums text-red-700 dark:text-red-400">
                     {currentAnalysis.summary.highPriorityCount}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">Core recurring questions</p>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Core recurring questions
+                  </p>
                 </div>
 
                 <div className="p-4 sm:px-6">
-                  <p className="text-xs font-medium text-slate-500">Highest-Weight Topic</p>
-                  <p className="mt-1 text-base sm:text-lg font-semibold text-slate-900 truncate">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Highest-Weight Topic
+                  </p>
+                  <p className="mt-1 text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">
                     {topTopic ? topTopic.topic : '—'}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500 font-mono tabular-nums">
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                     {topTopic ? `${topTopic.percentage}% of total questions` : 'No data'}
                   </p>
                 </div>
@@ -372,7 +419,7 @@ export default function App() {
               <div
                 role="tablist"
                 aria-label="Analysis report views"
-                className="inline-flex items-center p-1 bg-slate-200/70 rounded-lg overflow-x-auto max-w-full"
+                className="inline-flex items-center p-1 bg-slate-200/70 dark:bg-slate-800/90 rounded-lg overflow-x-auto max-w-full"
               >
                 {(
                   [
@@ -406,13 +453,13 @@ export default function App() {
                       onClick={() => setActiveView(tab.id)}
                       className={`px-4 py-2 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                         isActive
-                          ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                          : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                       }`}
                     >
                       {tab.label}
                       {typeof tab.count === 'number' && (
-                        <span className="ml-1.5 font-mono text-xs tabular-nums text-slate-400">
+                        <span className="ml-1.5 font-mono text-xs tabular-nums text-slate-400 dark:text-slate-500">
                           {tab.count}
                         </span>
                       )}
@@ -439,6 +486,7 @@ export default function App() {
             {activeView === 'weightage' && (
               <TopicWeightageView
                 topicWeightage={currentAnalysis.topicWeightage}
+                isDark={theme === 'dark'}
                 onInspectTopic={handleInspectTopic}
               />
             )}
@@ -458,9 +506,11 @@ export default function App() {
       </main>
 
       {/* Quiet Editorial Footer */}
-      <footer className="no-print border-t border-slate-200 bg-white mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
-          <p>PYQ Analyzer — Structured Previous Years&apos; Question Paper Analysis</p>
+      <footer className="no-print relative z-10 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 mt-12 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <p>
+            PYQ Analyzer · <span className="font-mono">pyq-analyzer-by-vk</span>
+          </p>
           <p>Supports PDF, JPG/PNG scans, DOCX, and TXT</p>
         </div>
       </footer>
